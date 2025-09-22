@@ -1,0 +1,54 @@
+{
+  "timestamp": "2025-09-22T15:27:48.755Z",
+  "network": "mainnet-beta",
+  "dlmm_program_id": "LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo",
+  "pools_found": [],
+  "configuration_template": {
+    "vault_seed": "meteora_fee_router_v1",
+    "pool_pubkey": "REQUIRED - Specific DLMM pool address",
+    "pool_token_vault_0": "DERIVED - Will be read from pool account",
+    "pool_token_vault_1": "DERIVED - Will be read from pool account",
+    "quote_mint": "REQUIRED - Specify quote token (e.g., USDC)",
+    "base_mint": "REQUIRED - Specify base token (e.g., SOL)",
+    "y0_total_allocation": "REQUIRED - Total investor allocation at TGE (u128)",
+    "investor_fee_share_bps": 7000,
+    "daily_cap_quote_lamports": 0,
+    "min_payout_lamports": 1000,
+    "policy_fund_missing_ata": true,
+    "creator_quote_ata": "REQUIRED - Creator wallet quote ATA",
+    "tick_lower": "REQUIRED - Lower tick for position (must ensure quote-only)",
+    "tick_upper": "REQUIRED - Upper tick for position (must ensure quote-only)"
+  },
+  "example_configurations": {
+    "sol_usdc_example": {
+      "description": "Example SOL/USDC pool configuration",
+      "pool_pubkey": "EXAMPLE_POOL_ADDRESS",
+      "quote_mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+      "base_mint": "So11111111111111111111111111111111111111112",
+      "quote_decimals": 6,
+      "base_decimals": 9,
+      "tick_spacing": "TBD - Read from pool",
+      "current_tick": "TBD - Read from pool",
+      "suggested_tick_range": {
+        "note": "For quote-only accrual, position should be single-sided",
+        "tick_lower": "TBD - Calculate based on current price",
+        "tick_upper": "TBD - Calculate based on current price"
+      }
+    }
+  },
+  "next_steps": [
+    "1. Identify specific DLMM pool to integrate with",
+    "2. Read pool account data to get token vaults and configuration",
+    "3. Determine appropriate tick range for quote-only fee accrual",
+    "4. Set Y0 total allocation amount",
+    "5. Configure creator wallet and quote ATA",
+    "6. Run preflight verification",
+    "7. Initialize honorary position"
+  ],
+  "resources": {
+    "meteora_pools_ui": "https://v2.meteora.ag/pools/dlmm",
+    "solscan_dlmm_program": "https://solscan.io/account/LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo",
+    "meteora_docs": "https://docs.meteora.ag/",
+    "meteora_sdk": "https://github.com/MeteoraAg/dlmm-sdk"
+  }
+}

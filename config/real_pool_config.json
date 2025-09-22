@@ -1,0 +1,53 @@
+{
+  "timestamp": "2025-09-22T15:37:33.486Z",
+  "network": "mainnet-beta",
+  "dlmm_program_id": "LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo",
+  "example_pool_config": {
+    "pool_pubkey": "EXAMPLE_POOL_ADDRESS_NEEDED",
+    "quote_mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+    "base_mint": "So11111111111111111111111111111111111111112",
+    "quote_decimals": 6,
+    "base_decimals": 9,
+    "pool_token_vault_0": "DERIVED_FROM_POOL_ACCOUNT",
+    "pool_token_vault_1": "DERIVED_FROM_POOL_ACCOUNT",
+    "current_tick": "READ_FROM_POOL_STATE",
+    "tick_spacing": "READ_FROM_POOL_CONFIG",
+    "vault_seed": "meteora_sol_usdc_v1",
+    "y0_total_allocation": "100000000000000",
+    "investor_fee_share_bps": 7000,
+    "daily_cap_quote_lamports": 0,
+    "min_payout_lamports": 1000,
+    "policy_fund_missing_ata": true,
+    "suggested_tick_range": {
+      "note": "These ticks need to be calculated based on current price to ensure quote-only accrual",
+      "tick_lower": "CALCULATE_BASED_ON_CURRENT_PRICE",
+      "tick_upper": "CALCULATE_BASED_ON_CURRENT_PRICE",
+      "strategy": "Single-sided liquidity above current price for quote-only fees"
+    }
+  },
+  "validation_steps": [
+    "1. Find active SOL/USDC DLMM pool on Meteora UI",
+    "2. Copy pool address and verify it exists on-chain",
+    "3. Read pool account data to get token vaults and configuration",
+    "4. Calculate appropriate tick range for quote-only position",
+    "5. Set Y0 and creator wallet configuration",
+    "6. Run preflight verification",
+    "7. Initialize honorary position"
+  ],
+  "resources": {
+    "meteora_ui": "https://v2.meteora.ag/pools/dlmm",
+    "solscan_dlmm": "https://solscan.io/account/LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo",
+    "token_list": {
+      "USDC": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+      "SOL": "So11111111111111111111111111111111111111112"
+    }
+  },
+  "found_pools": [
+    {
+      "address": "8Ve9KtGNtLRxCQNAVfkHEP5GRZHjdj6BjB1RQFZewG6V",
+      "owner": "LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo",
+      "dataLength": 904,
+      "lamports": 8383374
+    }
+  ]
+}

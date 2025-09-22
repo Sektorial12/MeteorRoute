@@ -1,0 +1,46 @@
+{
+  "meteora_programs": {
+    "dlmm": {
+      "program_id": "LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo",
+      "description": "Meteora DLMM (Dynamic Liquidity Market Maker) Program",
+      "network": "mainnet-beta"
+    },
+    "damm_v2": {
+      "program_id": "cpamdpZCGKUy5JxQXB4dcpGPiikHawvSWAd6mEn1sGG",
+      "description": "Meteora DAMM v2 Program", 
+      "network": "mainnet-beta"
+    },
+    "dynamic_amm": {
+      "program_id": "Eo7WjKq67rjJQSZxS6z3YkapzY3eMj6Xy8X5EQVn5UaB",
+      "description": "Dynamic AMM Pools Program",
+      "network": "mainnet-beta"
+    },
+    "dbc": {
+      "program_id": "dbcij3LWUppWqq96dh6gJWwBifmcGfLSB5D4DuSMaqN",
+      "description": "Dynamic Bonding Curve (DBC) Program",
+      "network": "mainnet-beta"
+    }
+  },
+  "streamflow": {
+    "program_id": "strmRqUCoQUgGUan5YhzUZa6KqdzwX5L6FpUxfmKg5m",
+    "description": "Streamflow Token Streaming Program",
+    "network": "mainnet-beta",
+    "note": "This is the commonly known Streamflow program ID - needs verification"
+  },
+  "required_for_integration": {
+    "pool_pubkey": "MISSING - Need specific DLMM pool to integrate with",
+    "pool_token_vault_0": "MISSING - Derived from pool account",
+    "pool_token_vault_1": "MISSING - Derived from pool account", 
+    "quote_mint": "MISSING - Need to specify which token is quote (e.g. USDC)",
+    "base_mint": "MISSING - Need to specify which token is base",
+    "y0_total_allocation": "MISSING - Total investor allocation at TGE",
+    "creator_quote_ata": "MISSING - Creator's quote token ATA",
+    "tick_lower": "MISSING - Lower tick for honorary position",
+    "tick_upper": "MISSING - Upper tick for honorary position"
+  },
+  "example_pools": {
+    "note": "These are example pools that could be used for testing",
+    "sol_usdc": "TBD - Need to find active SOL/USDC DLMM pool",
+    "bonk_usdc": "TBD - Need to find active BONK/USDC DLMM pool"
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "name": "meteor-route-fee-router",
+  "version": "0.1.0",
+  "description": "DAMM v2 Honorary Quote-Only Fee Position + 24h Distribution Crank",
+  "main": "index.js",
+  "scripts": {
+    "test": "anchor test --skip-local-validator",
+    "test-local": "anchor test",
+    "build": "anchor build",
+    "deploy": "anchor deploy",
+    "lint": "eslint . --ext .ts,.js",
+    "format": "prettier --write ."
+  },
+  "keywords": [
+    "solana",
+    "anchor",
+    "defi",
+    "meteora",
+    "dlmm",
+    "fee-routing"
+  ],
+  "author": "MeteorRoute Team",
+  "license": "MIT",
+  "dependencies": {
+    "@coral-xyz/anchor": "^0.30.1",
+    "@solana/web3.js": "^1.95.2",
+    "@solana/spl-token": "^0.4.8"
+  },
+  "devDependencies": {
+    "@types/chai": "^4.3.0",
+    "@types/mocha": "^9.1.0",
+    "@types/node": "^18.0.0",
+    "chai": "^4.3.0",
+    "mocha": "^9.2.0",
+    "ts-mocha": "^10.0.0",
+    "typescript": "^4.9.0",
+    "eslint": "^8.0.0",
+    "prettier": "^2.8.0"
+  }
+}

@@ -1,0 +1,100 @@
+{
+  "project": "MeteorRoute Fee Router",
+  "version": "1.0.0",
+  "timestamp": "2025-09-22T17:34:19+02:00",
+  "network": "mainnet-beta",
+  
+  "program_ids": {
+    "meteor_route_fee_router": "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS",
+    "meteora_dlmm": "LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo",
+    "streamflow": "strmRqUCoQUgGUan5YhzUZa6KqdzwX5L6FpUxfmKg5m"
+  },
+  
+  "verified_pools": {
+    "wif_sol_dlmm": {
+      "pool_pubkey": "8Ve9KtGNtLRxCQNAVfkHEP5GRZHjdj6BjB1RQFZewG6V",
+      "description": "WIF-SOL DLMM Pool (Verified)",
+      "owner": "LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo",
+      "data_size": 904,
+      "lamports": 8383374,
+      "verification_status": "VERIFIED",
+      "tokens": {
+        "token_x": "WIF_TOKEN_MINT_TBD",
+        "token_y": "So11111111111111111111111111111111111111112"
+      }
+    }
+  },
+  
+  "example_integration_config": {
+    "vault_seed": "meteora_wif_sol_v1",
+    "pool_pubkey": "8Ve9KtGNtLRxCQNAVfkHEP5GRZHjdj6BjB1RQFZewG6V",
+    
+    "tokens": {
+      "quote_mint": "So11111111111111111111111111111111111111112",
+      "base_mint": "WIF_TOKEN_MINT_ADDRESS_TBD",
+      "quote_decimals": 9,
+      "base_decimals": 6
+    },
+    
+    "pool_derived_accounts": {
+      "pool_token_vault_0": "DERIVED_FROM_POOL_ACCOUNT_DATA",
+      "pool_token_vault_1": "DERIVED_FROM_POOL_ACCOUNT_DATA",
+      "note": "These will be read from the pool account data structure"
+    },
+    
+    "fee_router_config": {
+      "y0_total_allocation": "100000000000000",
+      "investor_fee_share_bps": 7000,
+      "daily_cap_quote_lamports": 0,
+      "min_payout_lamports": 1000,
+      "policy_fund_missing_ata": true,
+      "creator_quote_ata": "CREATOR_WALLET_SOL_ATA_ADDRESS"
+    },
+    
+    "position_config": {
+      "tick_lower": "CALCULATE_FOR_QUOTE_ONLY",
+      "tick_upper": "CALCULATE_FOR_QUOTE_ONLY",
+      "strategy": "Single-sided liquidity for quote-only fee accrual",
+      "note": "Ticks must be calculated based on current pool price to ensure only SOL fees are accrued"
+    }
+  },
+  
+  "deployment_steps": [
+    "1. Deploy meteor-route-fee-router program to mainnet",
+    "2. Read WIF-SOL pool account data to get token vaults and current state",
+    "3. Calculate appropriate tick range for quote-only SOL fee accrual",
+    "4. Set Y0 total allocation and creator wallet configuration",
+    "5. Initialize policy PDA with fee distribution parameters",
+    "6. Initialize progress PDA for tracking daily distributions",
+    "7. Run preflight verification (analytical + simulation)",
+    "8. Initialize honorary position with calculated tick range",
+    "9. Test distribution crank with mock investor data",
+    "10. Deploy to production with real investor Streamflow accounts"
+  ],
+  
+  "next_actions": {
+    "immediate": [
+      "Read pool account data to get token mints and vaults",
+      "Calculate quote-only tick range based on current price",
+      "Set up creator wallet and quote ATA"
+    ],
+    "development": [
+      "Add back full distribute_fees functionality",
+      "Implement real CP-AMM integration",
+      "Add Streamflow integration for reading locked amounts",
+      "Complete test suite with real pool data"
+    ],
+    "production": [
+      "Deploy program to mainnet",
+      "Initialize with real configuration",
+      "Set up monitoring and alerting",
+      "Document integration process"
+    ]
+  },
+  
+  "resources": {
+    "pool_explorer": "https://solscan.io/account/8Ve9KtGNtLRxCQNAVfkHEP5GRZHjdj6BjB1RQFZewG6V",
+    "meteora_ui": "https://v2.meteora.ag/pools/dlmm",
+    "dlmm_program": "https://solscan.io/account/LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo"
+  }
+}

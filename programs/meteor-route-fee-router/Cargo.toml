@@ -1,0 +1,27 @@
+[package]
+name = "meteor-route-fee-router"
+version = "0.1.0"
+description = "DAMM v2 Honorary Quote-Only Fee Position + 24h Distribution Crank"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "meteor_route_fee_router"
+
+[features]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+cpi = ["no-entrypoint"]
+default = []
+
+[dependencies]
+anchor-lang = "0.30.1"
+anchor-spl = "0.30.1"
+solana-program = "~1.18.17"
+
+[dev-dependencies]
+solana-sdk = "~1.18.17"
+solana-program-test = "~1.18.17"
+tokio = { version = "1.0", features = ["macros"] }
+assert_matches = "1.4.0"
