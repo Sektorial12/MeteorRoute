@@ -1,8 +1,8 @@
 {
   "compilerOptions": {
-    "types": ["mocha", "chai", "node"],
+    "types": ["mocha", "chai"],
     "typeRoots": ["./node_modules/@types"],
-    "lib": ["es2015", "dom"],
+    "lib": ["es6"],
     "module": "commonjs",
     "target": "es6",
     "esModuleInterop": true,
@@ -10,9 +10,10 @@
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
     "moduleResolution": "node",
+    "resolveJsonModule": true,
     "skipLibCheck": true,
-    "strict": true,
-    "resolveJsonModule": true
+    "skipDefaultLibCheck": true,
+    "strict": true
   },
   "exclude": [
     "node_modules",
