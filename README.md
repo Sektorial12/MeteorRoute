@@ -13,6 +13,23 @@ This Anchor-compatible module implements a permissionless fee routing system for
 - **Pro-Rata Distribution**: Based on Streamflow locked amounts with precise floor math
 - **Dust & Cap Handling**: Carries forward small amounts and respects daily limits
 - **Production Safety**: Comprehensive error handling and deterministic failure modes
+ 
+ ## Quick Start
+ 
+ For a step-by-step build and test guide, see `docs/WALKTHROUGH.md`.
+ 
+ Short version:
+ 
+ ```bash
+ # Install deps
+ yarn install
+ 
+ # Build (regenerates IDL/types)
+ yarn build
+ 
+ # Run tests (Anchor manages validator)
+ yarn test-local
+ ```
 
 ## PDAs & Seeds Table
 
@@ -249,19 +266,15 @@ anchor test -- --nocapture
 ## Development Setup
 
 ```bash
-# Install dependencies
-npm install
-
-# Build program
-anchor build
-
-# Run tests
-anchor test
-
-# Deploy (update Anchor.toml cluster config first)
-anchor deploy
+ # Install dependencies
+ yarn install
+ 
+ # Build program
+ anchor build
+ 
+ # Run tests
+ yarn test-local
+ 
+ # Deploy (update Anchor.toml cluster config first)
+ anchor deploy
 ```
-
----
-
-**⚠️ CRITICAL**: This module handles real funds. Always run comprehensive tests on devnet before mainnet deployment.
