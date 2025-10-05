@@ -6,7 +6,7 @@ This guide gives judges a deterministic, end-to-end path to build the Anchor pro
 
 - Solana CLI >= 1.18
 - Rust toolchain (stable)
-- Anchor CLI 0.30.x
+- Anchor CLI 0.31.1 (or 0.31.x)
 - Node.js 18.x and Yarn Classic (1.x)
 - Git, bash (WSL/macOS/Linux)
 
@@ -43,16 +43,21 @@ yarn build
 ```
 
 Troubleshooting:
-- If you see anchor-syn/proc-macro2 span errors (E0599), update macro crates:
+- If you see anchor-syn/proc-macro2 span errors (E0599), this means Anchor CLI version mismatch:
   ```bash
-  cargo update -p proc-macro2 --workspace
-  cargo update -p syn --workspace
-  cargo update -p quote --workspace
-  # If still failing
-  rm -f Cargo.lock && cargo update
+  # The project uses Anchor 0.31.1, ensure your CLI matches
+  anchor --version  # Should show 0.31.1
+  
+  # If you have 0.30.x, upgrade:
+  cargo install --git https://github.com/coral-xyz/anchor avm --locked --force
+  avm install 0.31.1
+  avm use 0.31.1
+  
+  # Then clean and rebuild
+  rm -rf target Cargo.lock
   yarn build
   ```
-- See `docs/BUILD_ISSUES_AND_SOLUTIONS.md` for more.
+- See `docs/BUILD_ISSUES_AND_SOLUTIONS.md` for more details and Windows-specific issues.
 
 ## 4) Run Tests
 
@@ -127,9 +132,10 @@ Notes:
 
 ## 7) Common Pitfalls & Fixes
 
-- Missing IDL build feature: already added in Cargo.toml; just `yarn build`.
-- Macro span errors (E0599): run the `cargo update` steps above.
-- Tests failing with account shape errors: run `anchor build` (regenerate types), ensure `.accountsStrict(...)` includes all accounts (see test file comments), then retry.
+- **Missing IDL build feature**: Already added in Cargo.toml; just `yarn build`.
+- **Macro span errors (E0599)**: Anchor CLI version mismatch. Ensure you're using Anchor 0.31.1 (see troubleshooting in section 3).
+- **Tests failing with account errors**: Anchor 0.31.1 uses auto-PDA resolution. The test file uses `.accounts()` (not `.accountsStrict()`). If tests fail, run `anchor build` to regenerate types, then retry.
+- **Windows build issues**: Use WSL for building. See `docs/BUILD_ISSUES_AND_SOLUTIONS.md` for detailed Windows troubleshooting.
 
 ## 8) Clean Up
 

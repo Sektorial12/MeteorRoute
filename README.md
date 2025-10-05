@@ -237,7 +237,13 @@ solana-test-validator --reset \
 
 ### Running Tests
 ```bash
-anchor test -- --nocapture
+# Run all tests (Anchor manages validator)
+anchor test
+
+# Or use yarn script
+yarn test-local
+
+# Run verification scripts
 ./scripts/preflight_simulate.sh <pool_pubkey> <tick_lower> <tick_upper>
 ```
 

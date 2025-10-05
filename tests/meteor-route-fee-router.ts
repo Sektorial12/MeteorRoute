@@ -1,5 +1,5 @@
 import * as anchor from "@coral-xyz/anchor";
-import { Program } from "@coral-xyz/anchor";
+import { Program, BN } from "@coral-xyz/anchor";
 import { MeteorRouteFeeRouter } from "../target/types/meteor_route_fee_router";
 import { PublicKey, Keypair, SystemProgram } from "@solana/web3.js";
 import { expect } from "chai";
@@ -96,8 +96,8 @@ describe("meteor-route-fee-router", () => {
   describe("Initialization", () => {
     it("Initializes policy PDA with correct parameters", async () => {
       const investorFeeShareBps = 7000; // 70%
-      const dailyCapQuoteLamports = 0; // No cap
-      const minPayoutLamports = 1000;
+      const dailyCapQuoteLamports = new BN(0); // No cap
+      const minPayoutLamports = new BN(1000);
       const policyFundMissingAta = true;
 
       const tx = await program.methods
@@ -108,14 +108,8 @@ describe("meteor-route-fee-router", () => {
           minPayoutLamports,
           policyFundMissingAta
         )
-        .accountsStrict({
+        .accounts({
           authority,
-          policyPda,
-          quoteMint: quoteMintPk,
-          baseMint: baseMintPk,
-          pool: pool.publicKey,
-          systemProgram: SystemProgram.programId,
-          tokenProgram: TOKEN_PROGRAM_ID,
         })
         .rpc();
 
@@ -125,19 +119,16 @@ describe("meteor-route-fee-router", () => {
       const policyAccount = await program.account.policyPda.fetch(policyPda);
       expect(policyAccount.vaultSeed).to.equal(vaultSeed);
       expect(policyAccount.investorFeeShareBps).to.equal(investorFeeShareBps);
-      expect(policyAccount.dailyCapQuoteLamports.toNumber()).to.equal(dailyCapQuoteLamports);
-      expect(policyAccount.minPayoutLamports.toNumber()).to.equal(minPayoutLamports);
+      expect(policyAccount.dailyCapQuoteLamports.toNumber()).to.equal(0);
+      expect(policyAccount.minPayoutLamports.toNumber()).to.equal(1000);
       expect(policyAccount.policyFundMissingAta).to.equal(policyFundMissingAta);
     });
 
     it("Initializes progress PDA with zeroed state", async () => {
       const tx = await program.methods
         .initializeProgress(vaultSeed)
-        .accountsStrict({
+        .accounts({
           authority,
-          policyPda,
-          progressPda,
-          systemProgram: SystemProgram.programId,
         })
         .rpc();
 
@@ -166,22 +157,8 @@ describe("meteor-route-fee-router", () => {
           tickUpper,
           quoteMintPk
         )
-        .accountsStrict({
-          authority,
-          policyPda,
-          positionOwnerPda,
-          cpAmmProgram,
-          pool: pool.publicKey,
-          poolTokenVault0: poolVault0,
-          poolTokenVault1: poolVault1,
-          quoteMint: quoteMintPk,
-          baseMint: baseMintPk,
-          quoteTreasury,
-          position: mockPosition.publicKey,
-          systemProgram: SystemProgram.programId,
-          tokenProgram: TOKEN_PROGRAM_ID,
-          associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
-          rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+        .accounts({
+          mockPosition: mockPosition.publicKey,
         })
         .signers([mockPosition])
         .rpc();
@@ -206,22 +183,10 @@ describe("meteor-route-fee-router", () => {
           .initializePolicy(
             "test_vault",
             invalidBps,
-            0,
-            1000,
+            new BN(0),
+            new BN(1000),
             true
           )
-          .accountsStrict({
-            authority,
-            policyPda: PublicKey.findProgramAddressSync(
-              [Buffer.from("test_vault"), Buffer.from("policy")],
-              program.programId
-            )[0],
-            quoteMint: quoteMintPk,
-            baseMint: baseMintPk,
-            pool: pool.publicKey,
-            systemProgram: SystemProgram.programId,
-            tokenProgram: TOKEN_PROGRAM_ID,
-          })
           .rpc();
         
         expect.fail("Should have thrown error for invalid BPS");
@@ -237,27 +202,9 @@ describe("meteor-route-fee-router", () => {
       try {
         // Create a separate policy for a new vault seed to satisfy account constraints
         const vault2 = "test_vault_2";
-        const policyPda2 = PublicKey.findProgramAddressSync(
-          [Buffer.from(vault2), Buffer.from("policy")],
-          program.programId
-        )[0];
-        const positionOwnerPda2 = PublicKey.findProgramAddressSync(
-          [Buffer.from(vault2), Buffer.from("investor_fee_pos_owner")],
-          program.programId
-        )[0];
-        const quoteTreasury2 = await getAssociatedTokenAddress(quoteMintPk, positionOwnerPda2, true);
 
         await program.methods
-          .initializePolicy(vault2, 7000, 0, 1000, true)
-          .accountsStrict({
-            authority,
-            policyPda: policyPda2,
-            quoteMint: quoteMintPk,
-            baseMint: baseMintPk,
-            pool: pool.publicKey,
-            systemProgram: SystemProgram.programId,
-            tokenProgram: TOKEN_PROGRAM_ID,
-          })
+          .initializePolicy(vault2, 7000, new BN(0), new BN(1000), true)
           .rpc();
 
         const badMockPosition = Keypair.generate();
@@ -268,22 +215,8 @@ describe("meteor-route-fee-router", () => {
             invalidTickUpper,
             quoteMintPk
           )
-          .accountsStrict({
-            authority,
-            policyPda: policyPda2,
-            positionOwnerPda: positionOwnerPda2,
-            cpAmmProgram,
-            pool: pool.publicKey,
-            poolTokenVault0: poolVault0,
-            poolTokenVault1: poolVault1,
-            quoteMint: quoteMintPk,
-            baseMint: baseMintPk,
-            quoteTreasury: quoteTreasury2,
-            position: badMockPosition.publicKey,
-            systemProgram: SystemProgram.programId,
-            tokenProgram: TOKEN_PROGRAM_ID,
-            associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
-            rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+          .accounts({
+            mockPosition: badMockPosition.publicKey,
           })
           .signers([badMockPosition])
           .rpc();
