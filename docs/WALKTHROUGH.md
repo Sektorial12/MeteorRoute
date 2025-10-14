@@ -63,22 +63,28 @@ Troubleshooting:
 
 Two options:
 
-- Anchor manages local validator (cleanest):
+- Anchor-managed local validator (simple):
 ```bash
-yarn test-local
+anchor test
 ```
 
-- Reuse a running validator you started yourself:
+- Manual validator:
 ```bash
-solana-test-validator --reset --quiet &
-yarn test
+# Terminal A (WSL home path is recommended)
+mkdir -p ~/.local/anchor-ledger
+solana-test-validator --ledger ~/.local/anchor-ledger --reset --rpc-port 8899 --faucet-port 9900
+
+# Terminal B (in project root)
+solana config set --url http://127.0.0.1:8899
+anchor test --skip-local-validator
 ```
 
-The test file `tests/meteor-route-fee-router.ts` exercises:
+The test files exercise:
 - Policy initialization
 - Progress state initialization
 - Honorary position init (account wiring + preflight checks)
 - Distribution math vectors (proportional split, dust/min payout, all-unlocked)
+ - CP‑AMM integration scaffolding (E2E): two tests are intentionally skipped pending Streamflow mock data
 
 ## 5) Using the Scripts (Optional, For Demo Evidence)
 

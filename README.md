@@ -2,13 +2,13 @@
 
 ## Project Overview
 
-This Anchor-compatible module implements a permissionless fee routing system for Meteora DLMM V2 pools. It creates an "honorary" liquidity position that accrues fees exclusively in the quote token and distributes them to investors based on their still-locked token amounts from Streamflow.
+This Anchor-compatible module implements a permissionless fee routing system for CP‑AMM pools. It creates an "honorary" liquidity position biased toward quote‑token fees and enforces quote‑only distribution via runtime base‑fee detection (deterministic failure if any base fees are observed). Investor payouts are computed from Streamflow locked amounts.
 
 **Architecture Flow:** [docs.flow.com](https://docs.flow.com) ← ALWAYS consult for wiring context
 
 ## Key Features
 
-- **Quote-Only Fee Accrual**: Honorary position guaranteed to accrue fees only in quote token
+- **Quote‑Only Enforcement**: Runtime base‑fee detection; distribution aborts if base fees are observed
 - **24h Distribution Crank**: Permissionless, resumable pagination system
 - **Pro-Rata Distribution**: Based on Streamflow locked amounts with precise floor math
 - **Dust & Cap Handling**: Carries forward small amounts and respects daily limits
@@ -28,17 +28,20 @@ This Anchor-compatible module implements a permissionless fee routing system for
  yarn build
  
  # Run tests (Anchor manages validator)
- yarn test-local
+ anchor test
+ 
+ # Deploy (update Anchor.toml cluster config first)
+ anchor deploy
  ```
 
 ## PDAs & Seeds Table
 
 | PDA | Seeds | Usage |
 |-----|-------|-------|
-| `InvestorFeePositionOwnerPda` | `[VAULT_SEED, vault, "investor_fee_pos_owner"]` | Owns the honorary DLMM position |
+| `InvestorFeePositionOwnerPda` | `[VAULT_SEED, vault, "investor_fee_pos_owner"]` | Owns the honorary CP‑AMM position |
 | `PolicyPda` | `[VAULT_SEED, vault, "policy"]` | Stores fee share, caps, min payout config |
 | `ProgressPda` | `[VAULT_SEED, vault, "progress"]` | Tracks daily distribution state & pagination |
-| `QuoteTreasuryPda` | `[VAULT_SEED, vault, "quote_treasury"]` | Program-owned ATA for claimed quote fees |
+| `QuoteTreasuryPda` | `[vault_seed, "treasury", quote_mint]` | Program-owned ATA for claimed quote fees |
 
 ## Account Wiring & Required CP-AMM Accounts
 
@@ -65,21 +68,33 @@ token_program: Program<'info, Token>,
 
 ### Crank Accounts
 ```rust
-// Honorary position & owner
-honorary_position: Account<'info, Position>,
-position_owner_pda: Account<'info, InvestorFeePositionOwnerPda>,
-
-// Treasury & destination
-quote_treasury: Account<'info, TokenAccount>,
-creator_quote_ata: Account<'info, TokenAccount>,
-
-// Streamflow integration
-streamflow_program: Program<'info, Streamflow>,
-// + paged investor accounts (stream_pubkey[], investor_quote_ata[])
-
-// State tracking
+// State & owner
 policy_pda: Account<'info, PolicyPda>,
 progress_pda: Account<'info, ProgressPda>,
+position_owner_pda: Account<'info, InvestorFeePositionOwnerPda>,
+
+// CP‑AMM
+pool: Account<'info, Pool>,
+position: Account<'info, Position>,
+position_nft_account: Account<'info, TokenAccount>,
+pool_authority: UncheckedAccount<'info>, // const PDA checked in handler
+token_a_vault: Account<'info, TokenAccount>,
+token_b_vault: Account<'info, TokenAccount>,
+token_a_mint: Account<'info, Mint>,
+token_b_mint: Account<'info, Mint>,
+quote_mint: Account<'info, Mint>,
+
+// Treasury & destination
+quote_treasury: Account<'info, TokenAccount>, // ATA authority = position_owner_pda
+creator_quote_ata: Account<'info, TokenAccount>,
+
+// Programs
+cp_amm_program: Program<'info, CpAmm>,
+cp_amm_event_authority: UncheckedAccount<'info>,
+streamflow_program: UncheckedAccount<'info>,
+token_program: Program<'info, Token>,
+associated_token_program: Program<'info, AssociatedToken>,
+system_program: Program<'info, System>,
 ```
 
 ## Policy Parameters
@@ -91,20 +106,16 @@ progress_pda: Account<'info, ProgressPda>,
 | `min_payout_lamports` | u64 | Minimum payout threshold (below = carry forward) | 0-u64::MAX |
 | `policy_fund_missing_ata` | bool | Whether program funds missing investor ATAs | true/false |
 
-## Error Codes
+## Error Codes (selected)
 
-| Code | Description |
-|------|-------------|
-| `ERR_BASE_FEE_DETECTED` | Base token present in claim; distribution aborted |
-| `ERR_INVALID_POOL_ORDER` | Pool token order doesn't match declared quote mint |
-| `ERR_PREFLIGHT_FAILED` | Preflight analytical/simulation checks failed |
-| `ERR_DAY_GATE_NOT_PASSED` | 24h gate violated (too early for new distribution) |
-| `ERR_ALREADY_DISTRIBUTED` | Exceeds daily cap or day already finalized |
-| `ERR_MISSING_REQUIRED_INPUT` | Missing required on-chain account or config |
-| `ERR_MIN_PAYOUT_NOT_REACHED` | Payout below threshold; added to carry |
-| `ERR_PDA_SEED_MISMATCH` | Computed PDA doesn't match expected pubkey |
-| `ERR_OVERFLOW` | Arithmetic overflow during distribution math |
-| `ERR_INSUFFICIENT_RENT` | Insufficient lamports for required account creation |
+| Code (name) | Number | Description |
+|-------------|--------|-------------|
+| BaseFeeDetected | 6000 | Base token present in claim; distribution aborted |
+| DayGateNotPassed | 6003 | 24h gate violated (too early for new distribution) |
+| InvalidTickRange | 6010 | Tick inputs invalid for quote‑only validation |
+| MissingRequiredInput | 6004 | Missing required on‑chain account or config |
+| PdaSeedMismatch | 6006 | Computed PDA doesn’t match expected pubkey |
+| Overflow | 6007 | Arithmetic overflow during distribution math |
 
 ## Events
 
@@ -136,10 +147,11 @@ pub struct QuoteFeesClaimed {
 ```rust
 pub struct InvestorPayoutPage {
     pub page_index: u64,
-    pub processed_count: u64,
-    pub distributed: u128,
-    pub cumulative_distributed: u128,
-    pub carry: u64,
+    pub investors_processed: u32,
+    pub successful_transfers: u32,
+    pub failed_transfers: u32,
+    pub total_distributed: u128,
+    pub ata_creation_cost: u64,
     pub timestamp: u64,
 }
 ```
@@ -179,6 +191,10 @@ pub struct ProgressPda {
     pub pagination_cursor: u64,
     pub page_in_progress_flag: bool,
     pub day_finalized_flag: bool,
+    pub day_total_locked: u128,
+    pub day_investor_pool_target: u128,
+    pub day_investor_distributed: u128,
+    pub day_creator_remainder_target: u128,
 }
 ```
 
@@ -263,20 +279,15 @@ yarn test-local
 
 ## Implementation Status
 
-**Core Logic**:  Production-ready
-- All business logic (math, gating, distribution, events) fully implemented and tested
-- 19/19 tests passing on local validator
-- Zero unsafe code, deterministic seeds, comprehensive error handling
+**Core Logic**: Implemented
+- Business logic (math, gating, distribution, events) implemented and tested
+- 20 tests passing; 4 pending (E2E swap + Streamflow data writer)
+- Deterministic seeds, comprehensive error handling
 
-**External Integration Points**:  Placeholder (pending production parameters)
-- CP-AMM CPI calls (claim fees, create position) in `src/instructions/`
-- SPL Token transfers (investor/creator payouts)
-- Streamflow integration (investor pages provided via instruction data)
-
-**Why placeholders?** Per bounty requirements, tests should "demonstrate end-to-end flows against cp-amm and Streamflow on a local validator." The module demonstrates all logic with mock returns, ready for production CPI wiring once provided with:
-- DLMM program ID + pool accounts
-- Streamflow program ID
-- Policy parameters (Y0, fee share, caps)
+**External Integration Points**: Wired
+- CP‑AMM CPI for fee claim and SPL transfers implemented
+- Streamflow parsing on‑chain (owner check relaxed under `local` feature)
+- Position creation CPI remains TODO (client NFT setup)
 
 See `docs/INTEGRATION_GUIDE.md` for exact integration points and wiring instructions.
 
@@ -298,7 +309,7 @@ See `docs/INTEGRATION_GUIDE.md` for exact integration points and wiring instruct
  anchor build
  
  # Run tests
- yarn test-local
+ anchor test
  
  # Deploy (update Anchor.toml cluster config first)
  anchor deploy

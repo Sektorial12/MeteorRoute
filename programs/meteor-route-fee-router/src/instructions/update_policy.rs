@@ -14,7 +14,7 @@ pub struct UpdatePolicy<'info> {
 
     #[account(
         mut,
-        seeds = PolicyPda::seeds(&vault_seed),
+        seeds = [vault_seed.as_bytes(), b"policy"],
         bump,
         has_one = authority
     )]

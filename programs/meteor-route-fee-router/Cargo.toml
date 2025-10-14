@@ -13,12 +13,14 @@ no-entrypoint = []
 no-idl = []
 no-log-ix-name = []
 cpi = ["no-entrypoint"]
-default = []
+default = ["local"]
 idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
+local = []
 
 [dependencies]
 anchor-lang = "0.31.1"
 anchor-spl = "0.31.1"
+cp-amm = { path = "../cp-amm", features = ["cpi"] }
 
 [dev-dependencies]
 tokio = { version = "1.0", features = ["macros"] }

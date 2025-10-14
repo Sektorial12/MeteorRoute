@@ -55,4 +55,22 @@ pub enum FeeRouterError {
     
     #[msg("Total locked amount exceeds Y0 allocation.")]
     LockedExceedsAllocation = 6017,
+    
+    #[msg("Quote mint does not match pool token_x or token_y.")]
+    InvalidQuoteMint = 6018,
+    
+    #[msg("Position is not quote-only (contains base token exposure).")]
+    PositionNotQuoteOnly = 6019,
+    
+    #[msg("CP-AMM program ID mismatch.")]
+    InvalidCpAmmProgram = 6020,
+    
+    #[msg("Position owner mismatch.")]
+    InvalidPositionOwner = 6021,
+    
+    #[msg("CP-AMM PDA (event authority or pool authority) mismatch.")]
+    InvalidCpAmmPda = 6022,
+
+    #[msg("Invalid pagination state (non-contiguous pages or mismatched totals).")]
+    InvalidPaginationState = 6023,
 }

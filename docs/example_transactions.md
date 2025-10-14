@@ -55,17 +55,18 @@ position_owner_pda: PDA_meteora_wif_sol_v1_investor_fee_pos_owner_Fg6PaFpo
 system_program: 11111111111111111111111111111111
 ```
 
-**Example Instruction Data**:
+**Example Instruction Data** (schema reflects on‑chain parsing of Streamflow; locked amounts are not included):
 ```json
 {
   "vault_seed": "meteora_wif_sol_v1",
   "investor_pages": [
     {
       "page_index": 0,
+      "page_hash": "<keccak256 over (page_index LE || stream || investor)>",
       "investors": [
         {
-          "stream_pubkey": "8Ve9KtGNtLRxCQNAVfkHEP5GRZHjdj6BjB1RQFZewG6V",
-          "investor_quote_ata": "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM"
+          "stream": "8Ve9KtGNtLRxCQNAVfkHEP5GRZHjdj6BjB1RQFZewG6V",
+          "investor": "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM"
         }
       ]
     }
@@ -81,8 +82,8 @@ system_program: 11111111111111111111111111111111
     "QuoteFeesClaimed": {
       "claimed_quote": 5000000,
       "claimed_base": 0,
-      "position": "PDA_meteora_wif_sol_v1_investor_fee_pos_owner_Fg6PaFpo",
-      "treasury_ata": "PDA_meteora_wif_sol_v1_investor_fee_pos_owner_Fg6PaFpo",
+      "position": "<position_pubkey>",
+      "treasury_ata": "<quote_treasury_ata>",
       "timestamp": 1695398400
     }
   },
@@ -116,9 +117,9 @@ system_program: 11111111111111111111111111111111
 
 **Expected Result**: Transaction fails with error
 
-**Error Code**: `ERR_BASE_FEE_DETECTED (6001)`
+**Error**: `BaseFeeDetected (6000)`
 
-**Error Message**: "Base token claimed during cp-amm claim; distribution aborted."
+**Message**: "Base token claimed during cp‑amm claim; distribution aborted."
 
 **Example Log Output**:
 ```
@@ -150,10 +151,11 @@ Program log: Distribution aborted due to base fee detection
     "investor_pages": [
       {
         "page_index": 0,
+        "page_hash": "<keccak256 over (page_index LE || stream || investor)>",
+        "stream": "8Ve9KtGNtLRxCQNAVfkHEP5GRZHjdj6BjB1RQFZewG6V",
         "investors": [
           {
-            "stream_pubkey": "8Ve9KtGNtLRxCQNAVfkHEP5GRZHjdj6BjB1RQFZewG6V",
-            "investor_quote_ata": "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
+            "investor": "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
             "locked_amount": 60000000
           }
         ]
@@ -175,8 +177,7 @@ Program log: Distribution aborted due to base fee detection
     "investor_fee_quote_capped": 3000000
   },
   "distribution_results": {
-    "page_distributed": 2800000,
-    "page_dust": 200000,
+    "total_distributed": 2800000,
     "successful_transfers": 8,
     "failed_transfers": 2,
     "ata_creation_cost": 4078560,

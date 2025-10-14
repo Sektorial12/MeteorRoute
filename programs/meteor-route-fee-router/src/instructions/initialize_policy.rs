@@ -17,7 +17,7 @@ pub struct InitializePolicy<'info> {
         init,
         payer = authority,
         space = PolicyPda::LEN,
-        seeds = PolicyPda::seeds(&vault_seed),
+        seeds = [vault_seed.as_bytes(), b"policy"],
         bump
     )]
     pub policy_pda: Account<'info, PolicyPda>,
@@ -58,7 +58,7 @@ pub fn handler(
     let current_timestamp = Clock::get()?.unix_timestamp as u64;
 
     // Initialize policy configuration
-    policy_pda.vault_seed = vault_seed;
+    policy_pda.vault_seed = vault_seed.clone();
     policy_pda.authority = ctx.accounts.authority.key();
     policy_pda.investor_fee_share_bps = investor_fee_share_bps;
     policy_pda.daily_cap_quote_lamports = daily_cap_quote_lamports;

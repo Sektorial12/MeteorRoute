@@ -6,36 +6,23 @@ This guide explains how to integrate the MeteorRoute fee routing module into an 
 
 ##  Implementation Status
 
-**Core Business Logic**:  **Production-Ready**
-- All distribution math, 24h gating, pagination, and safety checks fully implemented
-- 19/19 tests passing on Anchor-managed local validator
-- Zero unsafe code, deterministic PDAs, comprehensive error handling
-- All required events emitted
+**Core Business Logic**:  **Implemented**
+- Distribution math, 24h gating, pagination, and safety checks implemented
+- 20 tests passing, 4 pending (E2E: swap and full Streamflow data writer)
+- Deterministic PDAs, comprehensive error handling, events emitted
 
-**External Integration Points**:  **Placeholder (Ready for Wiring)**
-
-The following functions contain placeholder implementations pending production parameters:
-
-| Location | Function | Purpose | Status |
-|----------|----------|---------|--------|
-| `src/instructions/distribute_fees.rs:244` | `claim_fees_from_position()` | CPI to CP-AMM to claim fees | Mock return values |
-| `src/instructions/distribute_fees.rs:342` | `transfer_to_investor()` | SPL token transfer to investor | Mock (commented CPI code included) |
-| `src/instructions/distribute_fees.rs:428` | `transfer_to_creator()` | SPL token transfer to creator | Mock (commented CPI code included) |
-| `src/instructions/initialize_honorary_position.rs:124` | Position creation | CPI to CP-AMM to create DLMM position | TODO (account wiring ready) |
-
-**Why placeholders?** Per `project-details.md` lines 124-151, the bounty requires "tests demonstrating end-to-end flows against cp-amm and Streamflow on a local validator." The module demonstrates all logic with mock returns. Production CPI wiring requires:
-- DLMM program ID + specific pool accounts
-- Streamflow program ID (or off-chain locked amount calculation)
-- Policy parameters (Y0, fee share, caps, min payout)
-
-Once provided, these placeholders can be replaced with ~20 lines of CPI code per function.
+**External Integration Points**:  **Wired**
+- CP‑AMM CPI for fee claim: `cp_amm::cpi::claim_position_fee(...)` (real CPI)
+- SPL Token transfers: `transfer_checked` for investor payouts and creator remainder (real CPI)
+- Streamflow parsing: on‑chain Borsh parsing of stream accounts (owner check gated under `local` feature)
+- Position creation CPI: **TODO** (requires NFT/Token‑2022 wiring on client)
 
 ---
 
 ## 1) Overview
 
 - Module: `programs/meteor-route-fee-router/`
-- Purpose: Own an honorary DLMM position (quote-only) and run a permissionless 24h distribution crank
+- Purpose: Own an honorary CP‑AMM position (quote‑only) and run a permissionless 24h distribution crank
 - Framework: Anchor 0.31.1
 - Status: Core logic production-ready; external CPI ready for wiring
 
@@ -106,12 +93,13 @@ References:
 
 ### 4.4 Distribute Fees (24h Crank)
 - Rust: `distribute_fees(vault_seed, investor_pages, is_final_page)`
-- Accounts:
+- Accounts (key subset; PDAs auto‑derived by Anchor 0.31):
   - `crank_caller` (signer; permissionless)
   - `policy_pda`, `progress_pda`, `position_owner_pda`
-  - `honorary_position`
-  - `quote_treasury`, `creator_quote_ata`
-  - `cp_amm_program`, `streamflow_program`
+  - `pool`, `position`, `position_nft_account`, `pool_authority`
+  - `token_a_vault`, `token_b_vault`, `token_a_mint`, `token_b_mint`, `quote_mint`
+  - `quote_treasury` (ATA, authority = `position_owner_pda`), `creator_quote_ata`
+  - `cp_amm_program`, `cp_amm_event_authority`, `streamflow_program`
   - `token_program`, `associated_token_program`, `system_program`
 - Steps per call:
   1) Claim fees (quote/base) from DLMM to `quote_treasury`
@@ -131,21 +119,20 @@ The program accepts investor pages in the instruction data (not as accounts). Sc
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
 pub struct InvestorPage {
     pub page_index: u64,
+    pub page_hash: [u8; 32],
     pub investors: Vec<InvestorData>,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
 pub struct InvestorData {
-    pub stream_pubkey: Pubkey,
-    pub investor_quote_ata: Pubkey,
-    pub locked_amount: u128,
+    pub stream: Pubkey,
+    pub investor: Pubkey,
 }
 ```
 
-Pagination expectations:
-- All pages for a given day share the same `vault_seed`
-- `is_final_page = true` only for the last page of the day
-- Pages can be retried idempotently; the program tracks `cumulative_distributed_today`, `carry_over_lamports`, and page progress
+- `page_hash` = keccak256(page_index LE || investors[i].stream || investors[i].investor for all i) to prevent replay
+- Locked amounts are read on‑chain by parsing each Streamflow stream from `remaining_accounts`
+- Under `local` feature, the Streamflow owner check is relaxed for tests
 
 ---
 

@@ -3,6 +3,7 @@ use anchor_spl::token::{Mint, Token, TokenAccount};
 use anchor_spl::associated_token::AssociatedToken;
 
 use crate::{
+    cp_amm::{self, Pool, CP_AMM_PROGRAM_ID},
     error::FeeRouterError,
     events::{HonoraryPositionInitialized, PreflightVerificationCompleted},
     state::{InvestorFeePositionOwnerPda, PolicyPda},
@@ -16,7 +17,7 @@ pub struct InitializeHonoraryPosition<'info> {
 
     #[account(
         mut,
-        seeds = PolicyPda::seeds(&vault_seed),
+        seeds = [vault_seed.as_bytes(), b"policy"],
         bump,
         has_one = authority
     )]
@@ -26,7 +27,7 @@ pub struct InitializeHonoraryPosition<'info> {
         init,
         payer = authority,
         space = InvestorFeePositionOwnerPda::LEN,
-        seeds = InvestorFeePositionOwnerPda::seeds(&vault_seed),
+        seeds = [vault_seed.as_bytes(), b"investor_fee_pos_owner"],
         bump
     )]
     pub position_owner_pda: Account<'info, InvestorFeePositionOwnerPda>,
@@ -36,8 +37,7 @@ pub struct InitializeHonoraryPosition<'info> {
     pub cp_amm_program: UncheckedAccount<'info>,
 
     /// CP-AMM pool account
-    /// CHECK: This will be validated during preflight verification
-    pub pool: UncheckedAccount<'info>,
+    pub pool: AccountLoader<'info, Pool>,
 
     /// Pool token vault 0
     pub pool_token_vault_0: Account<'info, TokenAccount>,
@@ -51,9 +51,9 @@ pub struct InitializeHonoraryPosition<'info> {
     /// Base mint (must match policy)
     pub base_mint: Account<'info, Mint>,
 
-    /// Program quote treasury ATA (will be created if needed)
+    /// Program quote treasury ATA (created)
     #[account(
-        init_if_needed,
+        init,
         payer = authority,
         associated_token::mint = quote_mint,
         associated_token::authority = position_owner_pda
@@ -95,20 +95,29 @@ pub fn handler(
         return err!(FeeRouterError::InvalidTickRange);
     }
 
-    // CRITICAL: Perform preflight verification for quote-only guarantee
-    let preflight_result = perform_preflight_verification(
-        &ctx.accounts.pool,
-        &ctx.accounts.pool_token_vault_0,
-        &ctx.accounts.pool_token_vault_1,
-        &ctx.accounts.quote_mint,
-        &ctx.accounts.base_mint,
+    // Validate CP-AMM program ID
+    require_keys_eq!(
+        ctx.accounts.cp_amm_program.key(),
+        CP_AMM_PROGRAM_ID,
+        FeeRouterError::InvalidCpAmmProgram
+    );
+
+    // Load and validate pool state
+    let pool = ctx.accounts.pool.load()?;
+
+    // CRITICAL: Validate quote-only position using CP-AMM module
+    cp_amm::validate_quote_only_position(
+        &pool,
         tick_lower,
         tick_upper,
+        &quote_mint,
     )?;
 
-    if !preflight_result.analytical_verified && !preflight_result.simulation_verified {
-        return err!(FeeRouterError::PreflightFailed);
-    }
+    msg!(
+        "Quote-only validation passed: tick_range=[{}, {}]",
+        tick_lower,
+        tick_upper
+    );
 
     // Initialize position owner PDA
     let position_owner_pda = &mut ctx.accounts.position_owner_pda;
@@ -118,7 +127,7 @@ pub fn handler(
     position_owner_pda.quote_mint = quote_mint;
     position_owner_pda.tick_lower = tick_lower;
     position_owner_pda.tick_upper = tick_upper;
-    position_owner_pda.verified_quote_only = preflight_result.analytical_verified || preflight_result.simulation_verified;
+    position_owner_pda.verified_quote_only = true; // Validated via cp_amm module
     position_owner_pda.created_at = current_timestamp;
 
     // TODO: Create actual DLMM position via CPI to CP-AMM program
@@ -139,8 +148,8 @@ pub fn handler(
         quote_mint,
         tick_lower,
         tick_upper,
-        analytical_verified: preflight_result.analytical_verified,
-        simulation_verified: preflight_result.simulation_verified,
+        analytical_verified: true,
+        simulation_verified: false,
         timestamp: current_timestamp,
     });
 
@@ -157,146 +166,15 @@ pub fn handler(
     Ok(())
 }
 
-#[derive(Debug)]
-struct PreflightResult {
-    analytical_verified: bool,
-    simulation_verified: bool,
-}
-
-/// Perform preflight verification to ensure quote-only fee accrual
-/// 
-/// This function implements both analytical and simulation verification
-/// as required by the specification. At least one must pass for initialization to succeed.
-fn perform_preflight_verification(
-    pool: &UncheckedAccount,
-    pool_token_vault_0: &Account<TokenAccount>,
-    pool_token_vault_1: &Account<TokenAccount>,
-    quote_mint: &Account<Mint>,
-    base_mint: &Account<Mint>,
-    tick_lower: i32,
-    tick_upper: i32,
-) -> Result<PreflightResult> {
-    
-    // ANALYTICAL VERIFICATION
-    let analytical_verified = perform_analytical_verification(
-        pool,
-        pool_token_vault_0,
-        pool_token_vault_1,
-        quote_mint,
-        base_mint,
-        tick_lower,
-        tick_upper,
-    )?;
-
-    // SIMULATION VERIFICATION
-    // Note: In a real implementation, this would create a test position
-    // and simulate swaps to verify only quote fees are accrued
-    let simulation_verified = perform_simulation_verification(
-        pool,
-        pool_token_vault_0,
-        pool_token_vault_1,
-        quote_mint,
-        base_mint,
-        tick_lower,
-        tick_upper,
-    )?;
-
-    msg!(
-        "Preflight verification: analytical={}, simulation={}",
-        analytical_verified,
-        simulation_verified
-    );
-
-    Ok(PreflightResult {
-        analytical_verified,
-        simulation_verified,
-    })
-}
-
-/// Analytical verification using pool parameters and tick math
-/// 
-/// This function analyzes the pool configuration and tick range to mathematically
-/// prove that the position will only accrue fees in the quote token.
-fn perform_analytical_verification(
-    _pool: &UncheckedAccount,
-    pool_token_vault_0: &Account<TokenAccount>,
-    pool_token_vault_1: &Account<TokenAccount>,
-    quote_mint: &Account<Mint>,
-    _base_mint: &Account<Mint>,
-    tick_lower: i32,
-    tick_upper: i32,
-) -> Result<bool> {
-    
-    // Determine token order in the pool
-    let quote_is_token_0 = pool_token_vault_0.mint == quote_mint.key();
-    let quote_is_token_1 = pool_token_vault_1.mint == quote_mint.key();
-    
-    if !quote_is_token_0 && !quote_is_token_1 {
-        return err!(FeeRouterError::InvalidPoolOrder);
-    }
-
-    // For DLMM pools, we need to analyze the tick range relative to current price
-    // to determine if the position will be single-sided (quote-only)
-    
-    // PLACEHOLDER LOGIC - In real implementation, this would:
-    // 1. Read current tick/price from pool state
-    // 2. Analyze if the tick range [tick_lower, tick_upper] is entirely
-    //    on one side of the current price (making it single-sided)
-    // 3. Verify that the single-sided token matches the quote mint
-    
-    // For now, we'll implement basic validation
-    let tick_range_valid = tick_upper > tick_lower && (tick_upper - tick_lower) > 0;
-    
-    if !tick_range_valid {
-        return Ok(false);
-    }
-
-    // CRITICAL: This is where real tick math analysis would happen
-    // For the hackathon/demo, we'll assume verification passes if:
-    // - Token order is correct
-    // - Tick range is valid
-    // - The range appears to be designed for single-sided liquidity
-    
-    let appears_single_sided = (tick_upper - tick_lower) < 1000; // Narrow range assumption
-    
-    msg!(
-        "Analytical verification: quote_is_token_0={}, quote_is_token_1={}, tick_range=[{}, {}], appears_single_sided={}",
-        quote_is_token_0,
-        quote_is_token_1,
-        tick_lower,
-        tick_upper,
-        appears_single_sided
-    );
-
-    Ok(appears_single_sided)
-}
-
-/// Simulation verification by creating test swaps
-/// 
-/// This function would create a test position and simulate swaps to verify
-/// that only quote fees are accrued. In a real implementation, this would
-/// require integration with the actual CP-AMM program.
-fn perform_simulation_verification(
-    _pool: &UncheckedAccount,
-    _pool_token_vault_0: &Account<TokenAccount>,
-    _pool_token_vault_1: &Account<TokenAccount>,
-    _quote_mint: &Account<Mint>,
-    _base_mint: &Account<Mint>,
-    _tick_lower: i32,
-    _tick_upper: i32,
-) -> Result<bool> {
-    
-    // PLACEHOLDER LOGIC - In real implementation, this would:
-    // 1. Create a temporary test position with the same tick range
-    // 2. Simulate small swaps in both directions
-    // 3. Call claim on the test position
-    // 4. Verify that claimed_base == 0 and claimed_quote > 0
-    // 5. Clean up the test position
-    
-    // For now, we'll return false to force reliance on analytical verification
-    // This ensures we don't accidentally approve unsafe configurations
-    
-    msg!("Simulation verification: not implemented in this version");
-    
-    Ok(false)
-}
+// NOTE: Quote-only validation is now handled by the cp_amm module.
+// The validate_quote_only_position function performs deterministic checks:
+// 1. Validates quote mint matches pool token_x or token_y
+// 2. Validates tick range is entirely on the quote-only side of active price
+// 3. Returns error if position would contain base token exposure
+//
+// TODO: Implement actual CP-AMM CPI for position creation.
+// This requires:
+// - Meteora DLMM v2 program interface definitions
+// - CPI call to create_position with owner = position_owner_pda
+// - Proper PDA signer seeds for the position_owner_pda
+// - Validation of position NFT account and metadata

@@ -1,50 +1,6 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{Mint, Token};
 
-/// Initialize policy configuration
-#[derive(Accounts)]
-#[instruction(vault_seed: String)]
-pub struct InitializePolicy<'info> {
-    #[account(mut)]
-    pub authority: Signer<'info>,
-
-    #[account(
-        init,
-        payer = authority,
-        space = PolicyPda::LEN,
-        seeds = [vault_seed.as_bytes(), b"policy"],
-        bump
-    )]
-    pub policy_pda: Account<'info, PolicyPda>,
-
-    pub system_program: Program<'info, System>,
-}
-
-/// Initialize progress tracking
-#[derive(Accounts)]
-#[instruction(vault_seed: String)]
-pub struct InitializeProgress<'info> {
-    #[account(mut)]
-    pub authority: Signer<'info>,
-
-    #[account(
-        seeds = [vault_seed.as_bytes(), b"policy"],
-        bump,
-        has_one = authority
-    )]
-    pub policy_pda: Account<'info, PolicyPda>,
-
-    #[account(
-        init,
-        payer = authority,
-        space = ProgressPda::LEN,
-        seeds = [vault_seed.as_bytes(), b"progress"],
-        bump
-    )]
-    pub progress_pda: Account<'info, ProgressPda>,
-
-    pub system_program: Program<'info, System>,
-}
+// NOTE: Account context structs are defined in `src/instructions/*` and not duplicated here.
 
 /// Policy configuration for fee distribution
 #[account]
@@ -55,6 +11,10 @@ pub struct PolicyPda {
     pub daily_cap_quote_lamports: u64,    // 0 = no cap
     pub min_payout_lamports: u64,         // minimum payout threshold
     pub policy_fund_missing_ata: bool,    // whether to fund missing ATAs
+    pub y0_total_allocation: u128,        // total investor allocation (Y0)
+    pub quote_mint: Pubkey,               // quote token mint
+    pub base_mint: Pubkey,                // base token mint
+    pub pool_pubkey: Pubkey,              // CP-AMM pool
     pub created_at: u64,
     pub updated_at: u64,
 }
@@ -67,9 +27,17 @@ impl PolicyPda {
         8 + // daily_cap_quote_lamports
         8 + // min_payout_lamports
         1 + // policy_fund_missing_ata
+        16 + // y0_total_allocation
+        32 + // quote_mint
+        32 + // base_mint
+        32 + // pool_pubkey
         8 + // created_at
         8 + // updated_at
         64; // padding for future fields
+
+    pub fn seeds(vault_seed: &str) -> [&[u8]; 2] {
+        [vault_seed.as_bytes(), b"policy"]
+    }
 }
 
 /// Progress tracking for daily distribution state
@@ -83,6 +51,17 @@ pub struct ProgressPda {
     pub pagination_cursor: u64,
     pub page_in_progress_flag: bool,
     pub day_finalized_flag: bool,
+    pub total_pages_expected: u64,
+    pub pages_processed_today: u64,
+    pub last_claimed_quote: u128,
+    pub last_claimed_base: u128,
+    
+    // Per-day targets (Phase 5)
+    pub day_total_locked: u64,            // Total locked amount at day start
+    pub day_investor_pool_target: u64,    // Target investor pool for the day
+    pub day_investor_distributed: u64,    // Amount distributed to investors so far
+    pub day_creator_remainder_target: u64, // Target creator remainder
+    
     pub created_at: u64,
     pub updated_at: u64,
 }
@@ -97,9 +76,72 @@ impl ProgressPda {
         8 + // pagination_cursor
         1 + // page_in_progress_flag
         1 + // day_finalized_flag
+        8 + // total_pages_expected
+        8 + // pages_processed_today
+        16 + // last_claimed_quote
+        16 + // last_claimed_base
+        8 + // day_total_locked
+        8 + // day_investor_pool_target
+        8 + // day_investor_distributed
+        8 + // day_creator_remainder_target
         8 + // created_at
         8 + // updated_at
-        64; // padding for future fields
+        32; // padding for future fields
+
+    pub fn seeds(vault_seed: &str) -> [&[u8]; 2] {
+        [vault_seed.as_bytes(), b"progress"]
+    }
+
+    pub fn is_new_day(&self, current_ts: u64) -> bool {
+        (current_ts / 86_400) > self.day_epoch
+    }
+
+    pub fn can_start_new_day(&self, current_ts: u64) -> bool {
+        self.last_distribution_ts == 0 || current_ts.saturating_sub(self.last_distribution_ts) >= 86_400
+    }
+
+    pub fn start_new_day(&mut self, current_ts: u64) {
+        self.day_epoch = current_ts / 86_400;
+        self.cumulative_distributed_today = 0;
+        self.pagination_cursor = 0;
+        self.day_finalized_flag = false;
+        self.pages_processed_today = 0;
+        
+        // Reset per-day targets
+        self.day_total_locked = 0;
+        self.day_investor_pool_target = 0;
+        self.day_investor_distributed = 0;
+        self.day_creator_remainder_target = 0;
+        
+        self.updated_at = current_ts;
+    }
+    
+    /// Set the day targets after calculating total locked and distribution amounts
+    pub fn set_day_targets(
+        &mut self,
+        total_locked: u64,
+        investor_pool_target: u64,
+        creator_remainder_target: u64,
+    ) {
+        self.day_total_locked = total_locked;
+        self.day_investor_pool_target = investor_pool_target;
+        self.day_creator_remainder_target = creator_remainder_target;
+    }
+    
+    /// Track investor distribution progress
+    pub fn add_investor_distribution(&mut self, amount: u64) -> Result<()> {
+        self.day_investor_distributed = self.day_investor_distributed
+            .checked_add(amount)
+            .ok_or(crate::error::FeeRouterError::Overflow)?;
+        Ok(())
+    }
+
+    pub fn finalize_day(&mut self, current_ts: u64, _total_claimed: u128, _creator_payout: u128) {
+        self.day_finalized_flag = true;
+        self.last_distribution_ts = current_ts;
+        self.pagination_cursor = 0;
+        self.updated_at = current_ts;
+    }
 }
 
 /// Owner PDA for the honorary DLMM position
@@ -126,6 +168,10 @@ impl InvestorFeePositionOwnerPda {
         1 + // verified_quote_only
         8 + // created_at
         32; // padding
+
+    pub fn seeds(vault_seed: &str) -> [&[u8]; 2] {
+        [vault_seed.as_bytes(), b"investor_fee_pos_owner"]
+    }
 }
 
 /// Distribution math utilities
@@ -212,32 +258,89 @@ impl DistributionMath {
     }
 }
 
-/// Initialize position owner PDA
-#[derive(Accounts)]
-#[instruction(vault_seed: String)]
-pub struct InitializeHonoraryPosition<'info> {
-    #[account(mut)]
-    pub authority: Signer<'info>,
+// NOTE: `InitializeHonoraryPosition` Accounts is defined under `instructions/initialize_honorary_position.rs`.
 
-    #[account(
-        seeds = [vault_seed.as_bytes(), b"policy"],
-        bump,
-        has_one = authority
-    )]
-    pub policy_pda: Account<'info, PolicyPda>,
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    #[account(
-        init,
-        payer = authority,
-        space = InvestorFeePositionOwnerPda::LEN,
-        seeds = [vault_seed.as_bytes(), b"investor_fee_pos_owner"],
-        bump
-    )]
-    pub position_owner_pda: Account<'info, InvestorFeePositionOwnerPda>,
+    fn default_progress() -> ProgressPda {
+        ProgressPda {
+            vault_seed: "vault".to_string(),
+            last_distribution_ts: 0,
+            day_epoch: 0,
+            cumulative_distributed_today: 0,
+            carry_over_lamports: 0,
+            pagination_cursor: 0,
+            page_in_progress_flag: false,
+            day_finalized_flag: false,
+            total_pages_expected: 0,
+            pages_processed_today: 0,
+            last_claimed_quote: 0,
+            last_claimed_base: 0,
+            day_total_locked: 0,
+            day_investor_pool_target: 0,
+            day_investor_distributed: 0,
+            day_creator_remainder_target: 0,
+            created_at: 0,
+            updated_at: 0,
+        }
+    }
 
-    /// Mock position account (in real implementation, this would be created via CP-AMM CPI)
-    #[account(mut)]
-    pub mock_position: Signer<'info>,
+    #[test]
+    fn test_eligible_bps_calc() {
+        // 0/1000 -> 0 bps
+        let bps0 = DistributionMath::calculate_eligible_bps(0, 1000, 9000).unwrap();
+        assert_eq!(bps0, 0);
 
-    pub system_program: Program<'info, System>,
+        // 600/1000 -> 6000 bps, min with 9000 -> 6000
+        let bps1 = DistributionMath::calculate_eligible_bps(600, 1000, 9000).unwrap();
+        assert_eq!(bps1, 6000);
+
+        // 1000/1000 with share 10_000 -> 10_000
+        let bps2 = DistributionMath::calculate_eligible_bps(1000, 1000, 10_000).unwrap();
+        assert_eq!(bps2, 10_000);
+    }
+
+    #[test]
+    fn test_investor_fee_and_payouts() {
+        // claimed 1_000_000, eligible 9000 bps -> 900,000 investor pool
+        let pool = DistributionMath::calculate_investor_fee_quote(1_000_000, 9000).unwrap();
+        assert_eq!(pool, 900_000);
+
+        // Split 60/40
+        let p60 = DistributionMath::calculate_investor_payout(60, 100, pool).unwrap();
+        let p40 = DistributionMath::calculate_investor_payout(40, 100, pool).unwrap();
+        assert_eq!(p60, 540_000);
+        assert_eq!(p40, 360_000);
+        assert_eq!(p60 + p40, pool);
+    }
+
+    #[test]
+    fn test_daily_cap() {
+        // 900k desired, cap 800k, none distributed yet -> 800k
+        let capped = DistributionMath::apply_daily_cap(900_000, 800_000, 0);
+        assert_eq!(capped, 800_000);
+    }
+
+    #[test]
+    fn test_progress_targets_and_distribution() {
+        let mut p = default_progress();
+        // Start new day resets fields
+        p.start_new_day(86_400);
+        assert_eq!(p.day_total_locked, 0);
+        assert_eq!(p.day_investor_distributed, 0);
+        assert_eq!(p.pages_processed_today, 0);
+
+        // Set day targets
+        p.set_day_targets(1_000, 900_000, 100_000);
+        assert_eq!(p.day_total_locked, 1_000);
+        assert_eq!(p.day_investor_pool_target, 900_000);
+        assert_eq!(p.day_creator_remainder_target, 100_000);
+
+        // Track distribution
+        p.add_investor_distribution(540_000).unwrap();
+        p.add_investor_distribution(360_000).unwrap();
+        assert_eq!(p.day_investor_distributed, 900_000);
+    }
 }

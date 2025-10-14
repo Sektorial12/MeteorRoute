@@ -9,7 +9,7 @@ pub struct InitializeProgress<'info> {
     pub authority: Signer<'info>,
 
     #[account(
-        seeds = PolicyPda::seeds(&vault_seed),
+        seeds = [vault_seed.as_bytes(), b"policy"],
         bump,
         has_one = authority
     )]
@@ -19,7 +19,7 @@ pub struct InitializeProgress<'info> {
         init,
         payer = authority,
         space = ProgressPda::LEN,
-        seeds = ProgressPda::seeds(&vault_seed),
+        seeds = [vault_seed.as_bytes(), b"progress"],
         bump
     )]
     pub progress_pda: Account<'info, ProgressPda>,
