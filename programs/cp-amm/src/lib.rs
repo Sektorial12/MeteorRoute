@@ -26,7 +26,7 @@ pub use pool_action_access::*;
 
 pub mod params;
 
-declare_id!("cpamdpZCGKUy5JxQXB4dcpGPiikHawvSWAd6mEn1sGG");
+declare_id!("9A8togt7c2wkR2putRLZ9vthcwX93wrnGij8W7sZZHFr");
 
 #[program]
 pub mod cp_amm {

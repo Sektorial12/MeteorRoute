@@ -32,7 +32,25 @@ This Anchor-compatible module implements a permissionless fee routing system for
  
  # Deploy (update Anchor.toml cluster config first)
  anchor deploy
- ```
+```
+
+## Local Testing & E2E
+
+- The router enables a compile-time feature `local` by default in `programs/meteor-route-fee-router/Cargo.toml`.
+  - Under `local`, `streamflow.rs` relaxes parsing and recipient validation to permit mocked Streamflow data during tests.
+  - Run tests normally: `anchor test`. For strict behavior, build without defaults: `anchor build -- --no-default-features`.
+
+- Distribution E2E (`tests/distribute-fees.e2e.ts`) specifics:
+  - Router-owned position is created via CP‑AMM CPI and has zero liquidity by design; distribution may run on a zero-claim path.
+  - Before calling `distribute_fees`, ensure the following PDA-owned token accounts exist (ATAs; authority = `InvestorFeePositionOwnerPda`):
+    - `tempA` (for `token_a_mint`)
+    - `tempB` (for `token_b_mint`)
+    - `quote_treasury` (for `quote_mint`)
+  - The crank no longer creates these ATAs on-chain; pre-create them idempotently in the client/tests using the Associated Token Program CreateIdempotent instruction.
+  - Each investor must be provided as triples in `remainingAccounts` per page: `[stream, investor_quote_ata (writable), investor_owner (readonly)]` in that exact order.
+  - CP‑AMM constants used by the program/tests:
+    - `poolAuthority`: `8DKynLAktE6jBWxEqg3to6srgNegwE7EJLd9oJyVSR9B`
+    - `cp_amm_event_authority`: PDA = `find_program_address(["__event_authority"])` for the CP‑AMM program ID
 
 ## PDAs & Seeds Table
 
@@ -281,13 +299,13 @@ yarn test-local
 
 **Core Logic**: Implemented
 - Business logic (math, gating, distribution, events) implemented and tested
-- 20 tests passing; 4 pending (E2E swap + Streamflow data writer)
+- Current status: 21 passing, 2 pending, 1 E2E in progress (local Streamflow mock + ATA setup)
 - Deterministic seeds, comprehensive error handling
 
 **External Integration Points**: Wired
-- CP‑AMM CPI for fee claim and SPL transfers implemented
-- Streamflow parsing on‑chain (owner check relaxed under `local` feature)
-- Position creation CPI remains TODO (client NFT setup)
+- CP‑AMM CPI for position creation and fee claim; SPL transfers implemented
+- Streamflow parsing on‑chain (recipient check gated under `local` feature)
+- Router requires PDA-owned ATAs to exist before crank (`tempA`, `tempB`, `quote_treasury`)
 
 See `docs/INTEGRATION_GUIDE.md` for exact integration points and wiring instructions.
 

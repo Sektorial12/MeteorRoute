@@ -79,12 +79,30 @@ solana config set --url http://127.0.0.1:8899
 anchor test --skip-local-validator
 ```
 
+Local feature toggle and strict build:
+
+- The router compiles with a `local` feature by default (see `programs/meteor-route-fee-router/Cargo.toml`). Under `local`, Streamflow parsing and recipient validation are relaxed to permit mocked data in tests.
+- Run tests normally:
+```bash
+anchor test
+```
+- For strict builds (disable local):
+```bash
+anchor build -- --no-default-features
+```
+
 The test files exercise:
 - Policy initialization
 - Progress state initialization
 - Honorary position init (account wiring + preflight checks)
 - Distribution math vectors (proportional split, dust/min payout, all-unlocked)
- - CP‑AMM integration scaffolding (E2E): two tests are intentionally skipped pending Streamflow mock data
+- CP‑AMM integration E2E (distribution):
+  - Uses the `local` feature with mocked Streamflow data.
+  - Requires pre-created PDA-owned ATAs (authority = `InvestorFeePositionOwnerPda`) before calling `distribute_fees`:
+    - `tempA` (mint = token A), `tempB` (mint = token B), and `quote_treasury` (mint = quote).
+  - Provide `remainingAccounts` as triples per investor in order per page:
+    - `[stream, investor_quote_ata (writable), investor_owner (readonly)]`.
+  - The router-created position has zero liquidity by design; the E2E may run a zero-claim path and still finalize the day.
 
 ## 5) Using the Scripts (Optional, For Demo Evidence)
 

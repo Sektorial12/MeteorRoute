@@ -21,7 +21,7 @@ describe("meteor-route-fee-router", () => {
   
   // Test accounts
   const authority = provider.wallet.publicKey;
-  const vaultSeed = "meteora_wif_sol_v1";
+  const vaultSeed = `meteora_wif_sol_v1_${Date.now()}`;
   const wallet: any = provider.wallet as any;
   const payer: anchor.web3.Keypair = wallet.payer as anchor.web3.Keypair;
   
@@ -123,10 +123,12 @@ describe("meteor-route-fee-router", () => {
           investorFeeShareBps,
           dailyCapQuoteLamports,
           minPayoutLamports,
-          policyFundMissingAta
+          policyFundMissingAta,
+          new BN(10_000_000)
         )
         .accounts({
           authority,
+          policyPda,
           quoteMint: quoteMintPk,
           baseMint: baseMintPk,
           pool: pool.publicKey,
@@ -218,16 +220,24 @@ describe("meteor-route-fee-router", () => {
       const invalidBps = 10001; // > 10000
 
       try {
+        const testVault = "test_vault";
+        const [policyPdaTest] = PublicKey.findProgramAddressSync(
+          [Buffer.from(testVault), Buffer.from("policy")],
+          program.programId
+        );
+
         await program.methods
           .initializePolicy(
-            "test_vault",
+            testVault,
             invalidBps,
             new BN(0),
             new BN(1000),
-            true
+            true,
+            new BN(10_000_000)
           )
           .accounts({
             authority,
+            policyPda: policyPdaTest,
             quoteMint: quoteMintPk,
             baseMint: baseMintPk,
             pool: pool.publicKey,
@@ -261,9 +271,10 @@ describe("meteor-route-fee-router", () => {
         const quoteTreasury2 = await getAssociatedTokenAddress(quoteMintPk, positionOwnerPda2, true);
 
         await program.methods
-          .initializePolicy(vault2, 7000, new BN(0), new BN(1000), true)
+          .initializePolicy(vault2, 7000, new BN(0), new BN(1000), true, new BN(10_000_000))
           .accounts({
             authority,
+            policyPda: policyPda2,
             quoteMint: quoteMintPk,
             baseMint: baseMintPk,
             pool: pool.publicKey,

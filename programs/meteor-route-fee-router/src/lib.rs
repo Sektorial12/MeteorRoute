@@ -31,7 +31,7 @@ pub(crate) mod __client_accounts_distribute_fees {
     pub use crate::instructions::__client_accounts_distribute_fees::*;
 }
 
-declare_id!("Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS");
+declare_id!("BK5eKYpvFhvnVTDX6ZV6zcpkAgmKTiSi2Q8z9ypGR23E");
 
 #[program]
 pub mod meteor_route_fee_router {
@@ -45,6 +45,7 @@ pub mod meteor_route_fee_router {
         daily_cap_quote_lamports: u64,
         min_payout_lamports: u64,
         policy_fund_missing_ata: bool,
+        y0_total_allocation: u128,
     ) -> Result<()> {
         instructions::initialize_policy::handler(
             ctx,
@@ -53,6 +54,7 @@ pub mod meteor_route_fee_router {
             daily_cap_quote_lamports,
             min_payout_lamports,
             policy_fund_missing_ata,
+            y0_total_allocation,
         )
     }
 

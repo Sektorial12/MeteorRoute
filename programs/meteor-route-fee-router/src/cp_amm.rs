@@ -1,5 +1,8 @@
 use anchor_lang::prelude::*;
 pub use cp_amm;
+pub use cp_amm::const_pda;
+pub use cp_amm::constants;
+pub use cp_amm::cpi;
 
 /// CP-AMM program ID (local fork for testing)
 pub const CP_AMM_PROGRAM_ID: Pubkey = cp_amm::ID;

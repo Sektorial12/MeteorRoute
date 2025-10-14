@@ -3,8 +3,8 @@ seeds = false
 skip-lint = false
 
 [programs.localnet]
-meteor_route_fee_router = "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS"
-cp_amm = "cpamdpZCGKUy5JxQXB4dcpGPiikHawvSWAd6mEn1sGG"
+meteor_route_fee_router = "BK5eKYpvFhvnVTDX6ZV6zcpkAgmKTiSi2Q8z9ypGR23E"
+cp_amm = "9A8togt7c2wkR2putRLZ9vthcwX93wrnGij8W7sZZHFr"
 
 [registry]
 url = "https://api.apr.dev"

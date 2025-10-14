@@ -43,10 +43,16 @@ pub fn handler(
     daily_cap_quote_lamports: u64,
     min_payout_lamports: u64,
     policy_fund_missing_ata: bool,
+    y0_total_allocation: u128,
 ) -> Result<()> {
     // Validate fee share basis points
     if investor_fee_share_bps > 10000 {
         return err!(FeeRouterError::InvalidFeeShareBps);
+    }
+
+    // Validate Y0 (total allocation) must be > 0
+    if y0_total_allocation == 0 {
+        return err!(FeeRouterError::InvalidY0);
     }
 
     // Validate mints are different
@@ -64,7 +70,7 @@ pub fn handler(
     policy_pda.daily_cap_quote_lamports = daily_cap_quote_lamports;
     policy_pda.min_payout_lamports = min_payout_lamports;
     policy_pda.policy_fund_missing_ata = policy_fund_missing_ata;
-    policy_pda.y0_total_allocation = 0; // Will be set during position initialization
+    policy_pda.y0_total_allocation = y0_total_allocation;
     policy_pda.quote_mint = ctx.accounts.quote_mint.key();
     policy_pda.base_mint = ctx.accounts.base_mint.key();
     policy_pda.pool_pubkey = ctx.accounts.pool.key();
@@ -82,11 +88,12 @@ pub fn handler(
     });
 
     msg!(
-        "Policy initialized: vault_seed={}, fee_share={}bps, daily_cap={}, min_payout={}",
+        "Policy initialized: vault_seed={}, fee_share={}bps, daily_cap={}, min_payout={}, y0_total_allocation={}",
         vault_seed,
         investor_fee_share_bps,
         daily_cap_quote_lamports,
-        min_payout_lamports
+        min_payout_lamports,
+        y0_total_allocation
     );
 
     Ok(())

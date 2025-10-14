@@ -87,31 +87,30 @@ pub struct DistributeFees<'info> {
     /// Quote mint (must be either token_a or token_b)
     pub quote_mint: Box<InterfaceAccount<'info, Mint>>,
 
-    /// Temporary token A account for receiving claimed fees
+    /// Temporary token A account for receiving claimed fees (must exist)
     #[account(
-        init_if_needed,
-        payer = crank_caller,
-        associated_token::mint = token_a_mint,
-        associated_token::authority = position_owner_pda,
-        associated_token::token_program = token_a_program,
+        mut,
+        token::mint = token_a_mint,
+        token::authority = position_owner_pda,
+        token::token_program = token_a_program,
     )]
     pub temp_a_account: Box<InterfaceAccount<'info, TokenAccount>>,
 
-    /// Temporary token B account for receiving claimed fees
+    /// Temporary token B account for receiving claimed fees (must exist)
     #[account(
-        init_if_needed,
-        payer = crank_caller,
-        associated_token::mint = token_b_mint,
-        associated_token::authority = position_owner_pda,
-        associated_token::token_program = token_b_program,
+        mut,
+        token::mint = token_b_mint,
+        token::authority = position_owner_pda,
+        token::token_program = token_b_program,
     )]
     pub temp_b_account: Box<InterfaceAccount<'info, TokenAccount>>,
 
-    /// Program quote treasury ATA (final destination for quote fees)
+    /// Program quote treasury token account (must exist; the test ensures ATA creation idempotently)
     #[account(
         mut,
-        associated_token::mint = quote_mint,
-        associated_token::authority = position_owner_pda
+        token::mint = quote_mint,
+        token::authority = position_owner_pda,
+        token::token_program = token_program,
     )]
     pub quote_treasury: Box<InterfaceAccount<'info, TokenAccount>>,
 
@@ -178,8 +177,8 @@ pub fn handler<'a, 'info: 'a>(
         FeeRouterError::MissingRequiredInput
     );
 
-    // Validate remaining_accounts: expect 2 accounts per investor (stream + quote ATA)
-    let expected_remaining = investor_pages.iter().map(|p| p.investors.len()).sum::<usize>() * 2;
+    // Validate remaining_accounts: expect 3 accounts per investor (stream + quote ATA + investor authority)
+    let expected_remaining = investor_pages.iter().map(|p| p.investors.len()).sum::<usize>() * 3;
     require!(
         ctx.remaining_accounts.len() == expected_remaining,
         FeeRouterError::MissingRequiredInput
@@ -310,7 +309,7 @@ pub fn handler<'a, 'info: 'a>(
     let mut remaining_accounts_index = 0usize;
 
     for page in investor_pages.iter() {
-        let (page_distributed, page_dust, page_processed) = process_investor_page(
+        let outcome = process_investor_page(
             page,
             total_locked,
             capped_investor_fee_quote,
@@ -319,25 +318,29 @@ pub fn handler<'a, 'info: 'a>(
             &ctx.accounts.position_owner_pda,
             &ctx.accounts.quote_mint,
             &ctx.accounts.token_program,
+            &ctx.accounts.associated_token_program,
+            &ctx.accounts.system_program,
             &vault_seed,
             ctx.bumps.position_owner_pda,
             current_timestamp,
             &ctx.remaining_accounts,
             &mut remaining_accounts_index,
             &ctx.accounts.streamflow_program.key(),
+            ctx.accounts.crank_caller.to_account_info(),
+            ctx.accounts.policy_pda.policy_fund_missing_ata,
         )?;
 
-        total_distributed_this_call += page_distributed;
-        total_dust_this_call += page_dust;
-        total_processed_count += page_processed;
+        total_distributed_this_call += outcome.page_distributed;
+        total_dust_this_call += outcome.page_dust;
+        total_processed_count += outcome.processed_count as u64;
 
         emit!(InvestorPayoutPage {
-            page_index: total_processed_count / page_processed,
-            investors_processed: page_processed as u32,
-            successful_transfers: page_processed as u32,
-            failed_transfers: 0,
-            total_distributed: page_distributed,
-            ata_creation_cost: 0,
+            page_index: page.page_index,
+            investors_processed: outcome.processed_count,
+            successful_transfers: outcome.success_count,
+            failed_transfers: outcome.fail_count,
+            total_distributed: outcome.page_distributed,
+            ata_creation_cost: outcome.ata_creation_cost,
             timestamp: current_timestamp,
         });
     }
@@ -522,24 +525,28 @@ fn claim_fees_from_position<'a, 'info: 'a>(
 
 /// Calculate total locked amount by reading Streamflow accounts from remaining_accounts
 /// 
-/// remaining_accounts layout: [stream0, ata0, stream1, ata1, ...]
+/// remaining_accounts layout: [stream0, ata0, owner0, stream1, ata1, owner1, ...]
 fn calculate_total_locked_from_streamflow(
     investor_pages: &[InvestorPage],
     remaining_accounts: &[AccountInfo],
-    streamflow_program_id: &Pubkey,
+    _streamflow_program_id: &Pubkey,
 ) -> Result<u128> {
     let mut total_locked = 0u128;
     let mut remaining_iter = remaining_accounts.iter();
     
     for page in investor_pages.iter() {
         for investor_data in page.investors.iter() {
-            // Get stream account (every 2nd account starting at 0)
+            // Get stream account (every 3rd account starting at 0)
             let stream_account_info = remaining_iter
                 .next()
                 .ok_or(FeeRouterError::MissingRequiredInput)?;
             
             // Skip the investor quote ATA (we'll use it later in process_investor_page)
             let _investor_quote_ata = remaining_iter
+                .next()
+                .ok_or(FeeRouterError::MissingRequiredInput)?;
+            // Skip the investor authority (owner) account (used only if we need to create ATA)
+            let _investor_owner = remaining_iter
                 .next()
                 .ok_or(FeeRouterError::MissingRequiredInput)?;
             
@@ -554,7 +561,7 @@ fn calculate_total_locked_from_streamflow(
             {
                 require_keys_eq!(
                     *stream_account_info.owner,
-                    *streamflow_program_id,
+                    *_streamflow_program_id,
                     FeeRouterError::MissingRequiredInput
                 );
             }
@@ -577,6 +584,15 @@ fn calculate_total_locked_from_streamflow(
 
 /// Process a single investor page and distribute payouts
 /// Reads locked amounts from Streamflow on-chain
+struct PageOutcome {
+    page_distributed: u128,
+    page_dust: u64,
+    processed_count: u32,
+    success_count: u32,
+    fail_count: u32,
+    ata_creation_cost: u64,
+}
+
 fn process_investor_page<'info>(
     investor_page: &InvestorPage,
     total_locked: u128,
@@ -586,16 +602,23 @@ fn process_investor_page<'info>(
     position_owner_pda: &Account<'info, InvestorFeePositionOwnerPda>,
     quote_mint: &InterfaceAccount<'info, Mint>,
     token_program: &Interface<'info, TokenInterface>,
+    associated_token_program: &Program<'info, AssociatedToken>,
+    system_program: &Program<'info, System>,
     vault_seed: &str,
     position_owner_bump: u8,
     _current_timestamp: u64,
     remaining_accounts: &[AccountInfo<'info>],
     remaining_accounts_index: &mut usize,
     streamflow_program_id: &Pubkey,
-) -> Result<(u128, u64, u64)> {
+    payer: AccountInfo<'info>,
+    fund_missing_ata: bool,
+) -> Result<PageOutcome> {
     let mut page_distributed = 0u128;
     let mut page_dust = 0u64;
-    let processed_count = investor_page.investors.len() as u64;
+    let processed_count = investor_page.investors.len() as u32;
+    let mut success_count: u32 = 0;
+    let mut fail_count: u32 = 0;
+    let mut ata_creation_cost: u64 = 0;
 
     for investor_data in investor_page.investors.iter() {
         // Get stream account from remaining_accounts
@@ -606,6 +629,11 @@ fn process_investor_page<'info>(
         
         // Get investor quote ATA from remaining_accounts
         let investor_quote_ata_info = remaining_accounts
+            .get(*remaining_accounts_index)
+            .ok_or(FeeRouterError::MissingRequiredInput)?;
+        *remaining_accounts_index += 1;
+        // Get investor owner account
+        let investor_owner_info = remaining_accounts
             .get(*remaining_accounts_index)
             .ok_or(FeeRouterError::MissingRequiredInput)?;
         *remaining_accounts_index += 1;
@@ -658,6 +686,60 @@ fn process_investor_page<'info>(
             continue;
         }
 
+        // Validate investor quote ATA exists and matches expected mint/owner
+        let mut ata_ok = false;
+        if let Ok(data) = investor_quote_ata_info.try_borrow_data() {
+            if data.len() >= 165 {
+                let mint_bytes: [u8; 32] = data[0..32].try_into().unwrap();
+                let owner_bytes: [u8; 32] = data[32..64].try_into().unwrap();
+                let account_mint = Pubkey::new_from_array(mint_bytes);
+                let account_owner = Pubkey::new_from_array(owner_bytes);
+                if account_mint == quote_mint.key() && account_owner == investor_data.investor {
+                    ata_ok = true;
+                }
+            }
+        }
+
+        if !ata_ok {
+            if fund_missing_ata {
+                // Validate investor owner matches expected investor
+                require_keys_eq!(
+                    investor_owner_info.key(),
+                    investor_data.investor,
+                    FeeRouterError::MissingRequiredInput
+                );
+                // Attempt to create investor ATA via Associated Token Program
+                anchor_spl::associated_token::create(
+                    CpiContext::new(
+                        associated_token_program.to_account_info(),
+                        anchor_spl::associated_token::Create {
+                            payer: payer.clone(),
+                            associated_token: investor_quote_ata_info.clone(),
+                            authority: investor_owner_info.clone(),
+                            mint: quote_mint.to_account_info(),
+                            system_program: system_program.to_account_info(),
+                            token_program: token_program.to_account_info(),
+                        },
+                    ),
+                )?;
+                // Track rent cost for ATA creation (approximate for 165-byte token account)
+                let rent = Rent::get()?;
+                let ata_rent = rent.minimum_balance(165);
+                let (new_cost, overflow) = ata_creation_cost.overflowing_add(ata_rent);
+                ata_creation_cost = if overflow { ata_creation_cost } else { new_cost };
+                success_count = success_count.saturating_add(0); // creation succeeded; payout below will count
+            } else {
+                page_dust += raw_payout as u64;
+                msg!(
+                    "Investor {} missing or invalid quote ATA; added payout {} to dust",
+                    investor_data.investor,
+                    raw_payout
+                );
+                fail_count = fail_count.saturating_add(1);
+                continue;
+            }
+        }
+
         // Transfer payout to investor via transfer_checked
         let seeds = &[
             vault_seed.as_bytes(),
@@ -682,6 +764,7 @@ fn process_investor_page<'info>(
         )?;
 
         page_distributed += raw_payout;
+        success_count = success_count.saturating_add(1);
 
         msg!(
             "Paid investor {}: locked={}, payout={}",
@@ -691,7 +774,14 @@ fn process_investor_page<'info>(
         );
     }
 
-    Ok((page_distributed, page_dust, processed_count))
+    Ok(PageOutcome {
+        page_distributed,
+        page_dust,
+        processed_count,
+        success_count,
+        fail_count,
+        ata_creation_cost,
+    })
 }
 
 /// Finalize the distribution day and transfer remainder to creator

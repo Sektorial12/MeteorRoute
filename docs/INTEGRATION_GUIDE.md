@@ -8,14 +8,16 @@ This guide explains how to integrate the MeteorRoute fee routing module into an 
 
 **Core Business Logic**:  **Implemented**
 - Distribution math, 24h gating, pagination, and safety checks implemented
-- 20 tests passing, 4 pending (E2E: swap and full Streamflow data writer)
+- Current status: 21 passing, 2 pending (distribution E2E under local feature; Streamflow mock)
 - Deterministic PDAs, comprehensive error handling, events emitted
 
 **External Integration Points**:  **Wired**
 - CP‑AMM CPI for fee claim: `cp_amm::cpi::claim_position_fee(...)` (real CPI)
 - SPL Token transfers: `transfer_checked` for investor payouts and creator remainder (real CPI)
-- Streamflow parsing: on‑chain Borsh parsing of stream accounts (owner check gated under `local` feature)
-- Position creation CPI: **TODO** (requires NFT/Token‑2022 wiring on client)
+- Streamflow parsing: on‑chain Borsh parsing of stream accounts (recipient check gated under `local` feature)
+- Position creation CPI: **Implemented** (Token‑2022, NFT minted; initial liquidity = 0)
+
+> Local feature: The router compiles with `features = ["local"]` by default (see `programs/meteor-route-fee-router/Cargo.toml`). Under `local`, Streamflow parsing/recipient checks are relaxed for tests. Use `anchor build -- --no-default-features` for strict builds.
 
 ---
 
@@ -101,6 +103,11 @@ References:
   - `quote_treasury` (ATA, authority = `position_owner_pda`), `creator_quote_ata`
   - `cp_amm_program`, `cp_amm_event_authority`, `streamflow_program`
   - `token_program`, `associated_token_program`, `system_program`
+- Prerequisites:
+  - Pre-create PDA-owned ATAs idempotently (authority = `position_owner_pda`):
+    - `temp_a_account` (mint = `token_a_mint`), `temp_b_account` (mint = `token_b_mint`)
+    - `quote_treasury` (mint = `quote_mint`)
+  - `remaining_accounts` must be given as triples per investor and in order per page: `[stream, investor_quote_ata (writable), investor_owner (readonly)]`.
 - Steps per call:
   1) Claim fees (quote/base) from DLMM to `quote_treasury`
   2) Fail deterministically if any base fees are observed
@@ -180,7 +187,7 @@ const pages: InvestorPage[] = [
   {
     pageIndex: 0,
     investors: [
-      { streamPubkey, investorQuoteAta, lockedAmount: new BN("1000000") },
+      { stream: streamPubkey, investor: investorOwnerPubkey },
       // ...
     ],
   },
@@ -189,12 +196,38 @@ await program.methods
   .distributeFees(vaultSeed, pages, true /* isFinalPage */)
   .accounts({
     crankCaller: wallet.publicKey,
-    honoraryPosition: positionPubkey,
+    policyPda,
+    progressPda,
+    positionOwnerPda,
+    pool,
+    position: positionPubkey,
+    positionNftAccount,
+    poolAuthority,
+    tokenAVault,
+    tokenBVault,
+    tokenAMint,
+    tokenBMint,
+    quoteMint,
+    tempAAccount,
+    tempBAccount,
     quoteTreasury,
     creatorQuoteAta,
     cpAmmProgram,
+    cpAmmEventAuthority,
     streamflowProgram,
+    tokenProgram,
+    tokenAProgram: tokenProgram,
+    tokenBProgram: tokenProgram,
+    associatedTokenProgram,
+    systemProgram,
   })
+  .remainingAccounts([
+    // triples per investor in the page: stream, investor_quote_ata, investor_owner
+    { pubkey: streamPubkey, isSigner: false, isWritable: false },
+    { pubkey: investorQuoteAta, isSigner: false, isWritable: true },
+    { pubkey: investorOwnerPubkey, isSigner: false, isWritable: false },
+    // ...
+  ])
   .rpc();
 ```
 
